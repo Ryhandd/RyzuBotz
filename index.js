@@ -47,7 +47,7 @@ for (const file of commandFiles) {
       console.log(`✅ Loaded: ${command.name}`);
     }
   } catch (err) {
-    console.error(`❌ Gagal load command ${file}:`, err.message);
+    console.error(`❌ Gagal load command ${file}:`, err);
   }
 }
 
