@@ -177,3 +177,14 @@ if (!token || token === "MASUKKAN_TOKEN_DISCORD_BOT_DISINI") {
     console.error("❌ Gagal login ke Discord:", err.message);
   });
 }
+
+// Keep-alive server for UptimeRobot monitoring
+const http = require("http");
+const webPort = process.env.PORT || 24706;
+
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("🤖 RyzuBotz Online!");
+}).listen(webPort, () => {
+  console.log(`📡 Keep-alive server running on port ${webPort}`);
+});
