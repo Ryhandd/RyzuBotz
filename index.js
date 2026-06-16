@@ -85,7 +85,7 @@ client.once("clientReady", () => {
 
       // Clean up guild-specific commands to prevent duplication
       console.log("🔄 Cleaning up guild-specific commands to prevent duplication...");
-      client.guilds.cache.forEach(async (guild) => {
+      for (const guild of client.guilds.cache.values()) {
         try {
           await rest.put(
             Routes.applicationGuildCommands(client.user.id, guild.id),
@@ -95,7 +95,7 @@ client.once("clientReady", () => {
         } catch (guildError) {
           console.error(`❌ Failed to clear guild-specific commands for server ${guild.name}:`, guildError.message);
         }
-      });
+      }
     } catch (error) {
       console.error("❌ Failed to deploy application (/) commands:", error);
     }
