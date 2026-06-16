@@ -83,6 +83,7 @@ client.once("clientReady", () => {
       );
       console.log("✅ Successfully reloaded global application (/) commands.");
 
+      /*
       // Clean up guild-specific commands to prevent duplication
       console.log("🔄 Cleaning up guild-specific commands to prevent duplication...");
       for (const guild of client.guilds.cache.values()) {
@@ -96,6 +97,7 @@ client.once("clientReady", () => {
           console.error(`❌ Failed to clear guild-specific commands for server ${guild.name}:`, guildError.message);
         }
       }
+      */
     } catch (error) {
       console.error("❌ Failed to deploy application (/) commands:", error);
     }
