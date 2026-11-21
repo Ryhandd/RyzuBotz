@@ -2,6 +2,9 @@ require("dotenv").config();
 const { Client, GatewayIntentBits, Collection } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
+const log = require("./utils/logger");
+const { startWebServer } = require("./utils/web");
+const { cacheStats } = require("./utils/audio");
 
 const client = new Client({
   intents: [
@@ -22,12 +25,19 @@ Platform.shim.eval = async (data, env) => {
   return func(...Object.values(env));
 };
 
+// Status realtime untuk /health (diperbarui oleh event Discord & YouTube engine)
+const health = { discord: "unknown", yt: "unknown", audio: "unknown" };
+let ytReady = false;
+
 // Initialize YouTube Engine
 Innertube.create().then(yt => {
   client.yt = yt;
-  console.log("✅ YouTube Engine (YouTube.js) initialized!");
+  ytReady = true;
+  health.yt = "ok";
+  log.info("bot", "✅ YouTube Engine (YouTube.js) initialized!");
 }).catch(err => {
-  console.error("❌ Failed to initialize YouTube Engine:", err);
+  health.yt = "error";
+  log.error("bot", "❌ Failed to initialize YouTube Engine:", err.message);
 });
 
 // Load commands
@@ -38,21 +48,23 @@ if (!fs.existsSync(commandsFolder)) {
 
 const commandFiles = fs.readdirSync(commandsFolder).filter(file => file.endsWith(".js"));
 
-console.log("📂 Loading commands...");
+log.info("bot", "📂 Loading commands...");
 for (const file of commandFiles) {
   try {
     const command = require(path.join(commandsFolder, file));
     if (command.name) {
       client.commands.set(command.name.toLowerCase(), command);
-      console.log(`✅ Loaded: ${command.name}`);
+      log.debug("bot", `✅ Loaded: ${command.name}`);
     }
   } catch (err) {
-    console.error(`❌ Gagal load command ${file}:`, err);
+    log.error("bot", `❌ Gagal load command ${file}:`, err.message);
   }
 }
+log.info("bot", `📂 ${client.commands.size} command dimuat.`);
 
 // Ready event
 client.once("clientReady", () => {
+  health.discord = "ok";
   console.log(`\n========================================`);
   console.log(`🤖 Ryzu Discord Bot online!`);
   console.log(`📱 Logged in as: ${client.user.tag}`);
@@ -76,32 +88,23 @@ client.once("clientReady", () => {
 
   (async () => {
     try {
-      console.log("🔄 Deploying application (/) commands globally...");
+      log.info("bot", "🔄 Deploying application (/) commands globally...");
       await rest.put(
         Routes.applicationCommands(client.user.id),
         { body: slashCommands }
       );
-      console.log("✅ Successfully reloaded global application (/) commands.");
-
-      /*
-      // Clean up guild-specific commands to prevent duplication
-      console.log("🔄 Cleaning up guild-specific commands to prevent duplication...");
-      for (const guild of client.guilds.cache.values()) {
-        try {
-          await rest.put(
-            Routes.applicationGuildCommands(client.user.id, guild.id),
-            { body: [] }
-          );
-          console.log(`🧹 Cleared guild-specific commands for server: ${guild.name} (${guild.id})`);
-        } catch (guildError) {
-          console.error(`❌ Failed to clear guild-specific commands for server ${guild.name}:`, guildError.message);
-        }
-      }
-      */
+      log.info("bot", "✅ Successfully reloaded global application (/) commands.");
     } catch (error) {
-      console.error("❌ Failed to deploy application (/) commands:", error);
+      log.error("bot", "❌ Failed to deploy application (/) commands:", error.message);
     }
   })();
+});
+
+client.on("disconnected", () => {
+  health.discord = "error";
+});
+client.on("reconnecting", () => {
+  health.discord = "unknown";
 });
 
 // Message handler
@@ -114,7 +117,7 @@ client.on("messageCreate", async (message) => {
   const args = content.slice(prefix.length).trim().split(/ +/);
   const commandName = args.shift().toLowerCase();
 
-  const command = client.commands.get(commandName) || 
+  const command = client.commands.get(commandName) ||
                   client.commands.find(cmd => cmd.alias && cmd.alias.includes(commandName));
 
   if (!command) return;
@@ -128,7 +131,7 @@ client.on("messageCreate", async (message) => {
       command: commandName
     });
   } catch (error) {
-    console.error(`Error executing command ${commandName}:`, error);
+    log.error("bot", `Error executing command ${commandName}:`, error.message);
     message.reply("❌ Terjadi kesalahan saat menjalankan perintah tersebut!").catch(() => {});
   }
 });
@@ -149,7 +152,7 @@ client.on("interactionCreate", async (interaction) => {
       command: interaction.commandName
     });
   } catch (error) {
-    console.error(`Error executing slash command ${interaction.commandName}:`, error);
+    log.error("bot", `Error executing slash command ${interaction.commandName}:`, error.message);
     const replyPayload = { content: "❌ Terjadi kesalahan saat menjalankan perintah tersebut!", ephemeral: true };
     if (interaction.replied || interaction.deferred) {
       await interaction.editReply(replyPayload).catch(() => {});
@@ -160,31 +163,55 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 // Error handling to prevent crash
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("⚠️ Unhandled Rejection at:", promise, "reason:", reason);
+process.on("unhandledRejection", (reason) => {
+  log.error("bot", "⚠️ Unhandled Rejection:", reason instanceof Error ? reason.stack : reason);
 });
 
 process.on("uncaughtException", (error) => {
-  console.error("⚠️ Uncaught Exception:", error);
+  log.error("bot", "⚠️ Uncaught Exception:", error.stack || error.message);
 });
+
+// ===== Web server (port 3000 / PORT) untuk health check UptimeRobot =====
+function getHealthStatus() {
+  const cs = cacheStats();
+  health.audio = health.yt === "ok" ? "ok" : health.yt;
+  return {
+    discord: health.discord,
+    yt: health.yt,
+    audio: health.audio,
+    cache: { files: cs.files, mb: Math.round(cs.bytes / 1048576) },
+  };
+}
+
+let webServer = null;
+startWebServer(getHealthStatus).then((srv) => { webServer = srv; });
+
+// ===== Graceful shutdown =====
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  log.info("bot", `📴 ${signal} diterima — mematikan bot dengan rapi...`);
+
+  try { client.destroy(); } catch (e) {}
+  try { if (webServer) webServer.close(); } catch (e) {}
+
+  // Beri waktu flush log, lalu keluar.
+  setTimeout(() => process.exit(0), 1500);
+  // Jangan gantung selamanya.
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 // Login using DISCORD_TOKEN
 const token = process.env.DISCORD_TOKEN;
 if (!token || token === "MASUKKAN_TOKEN_DISCORD_BOT_DISINI") {
-  console.error("❌ ERROR: Harap masukkan DISCORD_TOKEN Anda di file .env terlebih dahulu!");
+  log.error("bot", "❌ ERROR: Harap masukkan DISCORD_TOKEN Anda di file .env terlebih dahulu!");
+  log.error("bot", "Web server tetap berjalan agar health check tidak gagal.");
 } else {
   client.login(token).catch(err => {
-    console.error("❌ Gagal login ke Discord:", err.message);
+    health.discord = "error";
+    log.error("bot", "❌ Gagal login ke Discord:", err.message);
   });
 }
-
-// Keep-alive server for UptimeRobot monitoring
-const http = require("http");
-const webPort = process.env.PORT || 24706;
-
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("🤖 RyzuBotz Online!");
-}).listen(webPort, () => {
-  console.log(`📡 Keep-alive server running on port ${webPort}`);
-});
