@@ -25,7 +25,7 @@ module.exports = {
       return isInteraction ? interaction.reply({ content: errMsg, ephemeral: true }) : message.reply(errMsg);
     }
 
-    const success = queue.audioPlayer.pause();
+    const success = queue.pause();
     if (success) {
       const msgStr = "⏸️ **Musik dijeda!** Ketik `/resume` atau `.resume` untuk melanjutkan.";
       if (isInteraction) {

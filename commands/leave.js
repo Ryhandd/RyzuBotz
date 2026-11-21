@@ -15,25 +15,23 @@ module.exports = {
     const guild = isInteraction ? interaction.guild : message.guild;
 
     const voiceChannel = member.voice.channel;
-    if (!voiceChannel) {
-      const errMsg = "❌ Kamu harus berada di voice channel terlebih dahulu!";
-      return isInteraction ? interaction.reply({ content: errMsg, ephemeral: true }) : message.reply(errMsg);
-    }
+    const botChannel = guild.members.me.voice.channel;
 
     const queue = getQueue(guild.id);
-    if (!queue) {
-      const meVoice = guild.members.me.voice.channel;
-      if (meVoice) {
-        const connection = getVoiceConnection(guild.id);
-        if (connection) connection.destroy();
-        const msgStr = "👋 **Berhasil keluar dari voice channel!**";
-        return isInteraction ? interaction.reply(msgStr) : message.reply(msgStr);
-      }
+    if (!queue && !botChannel) {
       const errMsg = "❌ Aku tidak sedang berada di voice channel mana pun!";
       return isInteraction ? interaction.reply({ content: errMsg, ephemeral: true }) : message.reply(errMsg);
     }
 
-    queue.destroy();
+    if (queue) {
+      queue.destroy();
+    } else {
+      const connection = getVoiceConnection(guild.id);
+      if (connection) {
+        try { connection.destroy(); } catch (_) {}
+      }
+    }
+
     const msgStr = "👋 **Keluar dari voice channel dan mengosongkan antrean!**";
     if (isInteraction) {
       await interaction.reply(msgStr);

@@ -1,6 +1,4 @@
 const { EmbedBuilder, SlashCommandBuilder } = require("discord.js");
-const fs = require("fs");
-const path = require("path");
 
 module.exports = {
   name: "help",
@@ -13,6 +11,13 @@ module.exports = {
     const isInteraction = !!interaction;
     const client = isInteraction ? interaction.client : message.client;
 
+    // Cache daftar command saat runtime; jangan re-require tiap kali .help dipanggil
+    // (dulu `delete require.cache` + require ulang = sumber kebocoran & lambat).
+    if (!client._helpMediaCmds) {
+      const mediaCmds = ["neko", "waifu", "pinterest", "awoo", "foxgirl", "maid", "vtuber", "headphones", "bluearchive", "hoodie"];
+      client._helpMediaCmds = new Set(mediaCmds);
+    }
+
     const embed = new EmbedBuilder()
       .setTitle("🤖 Ryzu Discord Bot Menu")
       .setDescription(`Gunakan prefix \`${prefix}\` sebelum perintah atau pakai Slash Command \`/\`.\nContoh: \`${prefix}play kokoronashi\` atau \`/play query: kokoronashi\``)
@@ -20,27 +25,21 @@ module.exports = {
       .setThumbnail(client.user.displayAvatarURL())
       .setTimestamp();
 
-    const cmdFolder = path.join(__dirname);
-    const files = fs.readdirSync(cmdFolder).filter(f => f.endsWith(".js"));
-
     let musicList = "";
     let mediaList = "";
+    let utilityList = "";
+    const mediaCmds = client._helpMediaCmds;
 
-    const mediaCmds = ["neko", "waifu", "pinterest", "awoo", "foxgirl", "maid", "vtuber", "headphones", "bluearchive", "hoodie"];
+    for (const cmd of client.commands.values()) {
+      const aliasStr = cmd.alias && cmd.alias.length > 0 ? ` (Alias: ${cmd.alias.map(a => `\`${a}\``).join(", ")})` : "";
+      const line = `• **${prefix}${cmd.name}**${aliasStr} - _${cmd.description || "No description"}_\n`;
 
-    for (const file of files) {
-      const fullPath = path.join(cmdFolder, file);
-      delete require.cache[fullPath];
-      const cmd = require(fullPath);
-      if (cmd.name) {
-        const aliasStr = cmd.alias && cmd.alias.length > 0 ? ` (Alias: ${cmd.alias.map(a => `\`${a}\``).join(", ")})` : "";
-        const line = `• **${prefix}${cmd.name}**${aliasStr} - _${cmd.description || "No description"}_\n`;
-
-        if (mediaCmds.includes(cmd.name.toLowerCase())) {
-          mediaList += line;
-        } else {
-          musicList += line;
-        }
+      if (mediaCmds.has(cmd.name.toLowerCase())) {
+        mediaList += line;
+      } else if (["status", "cache", "help"].includes(cmd.name.toLowerCase())) {
+        utilityList += line;
+      } else {
+        musicList += line;
       }
     }
 
@@ -49,6 +48,9 @@ module.exports = {
     }
     if (mediaList) {
       embed.addFields({ name: "🌸 Media & Anime Perintah", value: mediaList });
+    }
+    if (utilityList) {
+      embed.addFields({ name: "🛠️ Utility & Monitoring", value: utilityList });
     }
 
     if (isInteraction) {

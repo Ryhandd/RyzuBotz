@@ -20,13 +20,14 @@ module.exports = {
     }
 
     const queue = getQueue(guild.id);
-    if (!queue) {
+    if (!queue || !queue.isPlaying) {
       const errMsg = "❌ Tidak ada musik yang sedang diputar!";
       return isInteraction ? interaction.reply({ content: errMsg, ephemeral: true }) : message.reply(errMsg);
     }
 
     queue.stop();
-    const msgStr = "⏹️ **Musik dihentikan dan antrean dikosongkan!**";
+    queue.destroy();
+    const msgStr = "⏹️ **Musik dihentikan, antrean dikosongkan, dan bot keluar dari voice channel!**";
     if (isInteraction) {
       await interaction.reply(msgStr);
     } else {
